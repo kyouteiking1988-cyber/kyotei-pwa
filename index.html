@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1018">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="googlebot" content="noindex, nofollow, noarchive">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="競艇予想">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="description" content="競艇の当日予想と答え合わせ">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<title>競艇予想</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="top" id="top">
+    <div class="brand">
+      <div>
+        <h1 id="pageTitle">競艇予想</h1>
+        <div class="date" id="dateLabel"></div>
+      </div>
+      <button type="button" class="refresh" id="refreshBtn" aria-label="最新に更新">更新</button>
+    </div>
+    <div class="status-row" id="statusRow"></div>
+    <div class="segments" id="segments" hidden>
+      <button type="button" data-seg="solid" class="on">固い20</button>
+      <button type="button" data-seg="mixed">混戦20</button>
+      <button type="button" data-seg="all">全レース</button>
+    </div>
+  </header>
+  <main id="main"></main>
+  <div class="install" id="installBanner" hidden>
+    <div>
+      <strong>ホーム画面に追加</strong>
+      <div class="install-how" id="installHow"></div>
+    </div>
+    <button type="button" class="install-x" id="installClose" aria-label="閉じる">×</button>
+  </div>
+  <nav class="tabbar" aria-label="メインメニュー">
+    <a href="#/" class="tab on" data-tab="yoso">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5v17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M6 4.5h12l-3.2 3.8 3.2 3.8H6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      <span>予想</span>
+    </a>
+    <a href="#/report" class="tab" data-tab="report">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span>答え合わせ</span>
+    </a>
+    <a href="#/history" class="tab" data-tab="history">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v4.5l3 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>履歴</span>
+    </a>
+  </nav>
+</div>
+<script src="app.js" defer></script>
+</body>
+</html>
