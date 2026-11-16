@@ -67,7 +67,7 @@ function scenarioCol(p, label, official) {
   if (!p) return `<div class="scen"><div class="k">${label}</div><div class="sub">なし</div></div>`;
   const ranked = p.ranking || [];
   const maxP = Math.max(...ranked.map((x) => x.p || x.win_prob || 0), 0.01);
-  const bars = ranked.map((x) => barRow(x.waku, x.name, x.p || x.win_prob || 0, maxP)).join("");
+  const bars = ranked.map((x) => barRow(x.waku, x.name, x.p || x.win_prob || 0, maxP, x.place2_prob)).join("");
   const tris = p.trifecta_top5 || [];
   const exs = p.exacta_top3 || [];
   const tmax = Math.max(...tris.map((x) => x.p || 0), 0.01);
@@ -99,6 +99,53 @@ function entryDuo(r) {
 function pct(p, digits = 1) {
   if (p == null || Number.isNaN(Number(p))) return "—";
   return (Number(p) * 100).toFixed(digits) + "%";
+}
+const GRADE_CLASS = {
+  SG: "g-sg", PG1: "g-sg", G1: "g-g1", G2: "g-g2", G3: "g-g3",
+  "ヴィーナス": "g-venus", "ルーキー": "g-rookie", "一般": "g-ippan"
+};
+function gradeBadge(g) {
+  if (!g) return "";
+  const cls = GRADE_CLASS[g] || "g-other";
+  return `<span class="gbadge ${cls}">${esc(g)}</span>`;
+}
+function boatP2(b, r) {
+  if (b && b.place2_prob != null) return b.place2_prob;
+  if (r && r.place2_probs && b && b.waku != null) return r.place2_probs[String(b.waku)];
+  return null;
+}
+function place2Of(r) {
+  if (!r) return null;
+  if (r.honmei2 != null) return { waku: r.honmei2, name: r.honmei2_name, p: r.honmei2_prob };
+  let best = null;
+  (r.ranking || r.boats || []).forEach((x) => {
+    const pv = x.place2_prob;
+    if (pv == null) return;
+    if (!best || pv > best.p) best = { waku: x.waku, name: x.name, p: pv };
+  });
+  return best;
+}
+function p2Line(r) {
+  const s = place2Of(r);
+  if (!s) return "";
+  return `<div class="p2line">2着本命 ${wakuChip(s.waku)} ${esc(s.name || "")} ${s.p != null ? pct(s.p) : ""}</div>`;
+}
+function venueRaceList(v) {
+  const id = String(v?.jcd ?? "").padStart(2, "0");
+  if (v && v.races && v.races.length && v.races[0].deadline_dt) return v.races;
+  return (TODAY?.races || []).filter((r) => String(r.jcd).padStart(2, "0") === id);
+}
+function venueSale(v, now = Date.now()) {
+  const list = venueRaceList(v);
+  const upcoming = list
+    .map((r) => ({ r, ts: r.deadline_dt ? Date.parse(r.deadline_dt) : NaN }))
+    .filter((x) => Number.isFinite(x.ts) && x.ts > now)
+    .sort((a, b) => a.ts - b.ts);
+  if (!upcoming.length) {
+    return { done: true, label: list.length ? "発売終了" : "― ―", deadline_dt: "" };
+  }
+  const n = upcoming[0].r;
+  return { done: false, label: `${n.rno}R ${n.close || ""}`.trim(), deadline_dt: n.deadline_dt || "" };
 }
 function retPct(roi) {
   if (roi == null || Number.isNaN(Number(roi))) return "—";
@@ -172,6 +219,15 @@ function refreshCountdowns() {
       clock.className = "clock " + d.state;
     }
   });
+  $$("[data-venue-jcd]").forEach((el) => {
+    const v = findVenue(el.getAttribute("data-venue-jcd"));
+    if (!v) return;
+    const sale = venueSale(v);
+    el.textContent = sale.label;
+    el.classList.toggle("done", sale.done);
+    const tile = el.closest(".vtile");
+    if (tile) tile.classList.toggle("ended", sale.done);
+  });
 }
 
 function honmeiProb(r) {
@@ -202,6 +258,7 @@ function raceCard(r, key, color) {
       </div>
       <div class="pct">${p != null ? pct(p) : ""}</div>
     </div>
+    ${p2Line(r)}
     ${val != null ? `<div class="scorebar"><span style="width:${Math.min(100, val)}%;background:${color}"></span></div>
     <div class="sub">${key === "stability" ? "安定度" : "荒れ度"} ${val}</div>` : ""}
   </article>`;
@@ -249,8 +306,59 @@ function renderStatus(tab) {
   row.innerHTML = chips.join("");
 }
 
+function viewMeet() {
+  const vs = TODAY?.venues || [];
+  if (!vs.length) return `<div class="empty">開催データがありません</div>`;
+  const tiles = vs.map((v) => {
+    const holding = v.holding !== false && ((v.races && v.races.length) || v.grade || v.period);
+    if (!holding) {
+      return `<div class="vtile off"><div class="vn">${esc(v.name)}</div><div class="vdash">― ―</div></div>`;
+    }
+    const sale = venueSale(v);
+    const night = v.nighter || (v.session || "").includes("ナイター");
+    const day = v.day_label || "";
+    const jcd = String(v.jcd).padStart(2, "0");
+    return `<button type="button" class="vtile on${night ? " night" : ""}${sale.done ? " ended" : ""}" data-go="#/v/${jcd}">
+      <div class="vtop"><div class="vn">${esc(v.name)}</div>${night ? `<span class="moon" title="ナイター">夜</span>` : ""}</div>
+      <div class="vmeta">${gradeBadge(v.grade)}${day ? `<span class="day">${esc(day)}</span>` : ""}</div>
+      <div class="vnext${sale.done ? " done" : ""}" data-venue-jcd="${esc(jcd)}">${esc(sale.label)}</div>
+    </button>`;
+  }).join("");
+  return `<div class="meet-grid">${tiles}</div>`;
+}
+function viewClose() {
+  const now = Date.now();
+  const races = (TODAY?.races || []).slice().sort((a, b) => {
+    const ta = a.deadline_dt ? Date.parse(a.deadline_dt) : Infinity;
+    const tb = b.deadline_dt ? Date.parse(b.deadline_dt) : Infinity;
+    const ao = Number.isFinite(ta) && ta <= now;
+    const bo = Number.isFinite(tb) && tb <= now;
+    if (ao !== bo) return ao - bo;
+    return ta - tb;
+  });
+  if (!races.length) return `<div class="empty">レースがありません</div>`;
+  return `<div class="metric">締切が近い順です。発売状況はいまの時刻で判定します。</div>${races.map((r) => raceCard(r)).join("")}`;
+}
+function viewVenue(jcd) {
+  const v = findVenue(jcd);
+  if (!v) return `<button class="back" data-go="#/">← 開催一覧</button><div class="empty">場が見つかりません</div>`;
+  const id = String(jcd).padStart(2, "0");
+  const races = (TODAY.races || []).filter((r) => String(r.jcd).padStart(2, "0") === id)
+    .sort((a, b) => (a.rno || 0) - (b.rno || 0));
+  const sale = venueSale({ ...v, races });
+  const night = v.nighter || (v.session || "").includes("ナイター");
+  return `<button class="back" data-go="#/">← 開催一覧</button>
+    <div class="venue-head">
+      <div class="title">${esc(v.name)} ${night ? '<span class="moon">夜</span>' : ""}</div>
+      <div class="sub">${gradeBadge(v.grade)} ${esc(v.day_label || "")} · ${esc(v.session || "")} · ${esc(v.title || "")}</div>
+      <div class="sub">${sale.done ? "発売終了" : ("次 " + sale.label)}</div>
+    </div>
+    ${races.map((r) => raceCard(r)).join("") || "<div class='empty'>レースがありません</div>"}`;
+}
 function viewYoso(seg) {
   if (!TODAY) return `<div class="empty">予想データがまだありません</div>`;
+  if (seg === "meet" || seg === "all" || !seg) return viewMeet();
+  if (seg === "close") return viewClose();
   const focus = TODAY.focus || {};
   let hard = (focus.solid || []).map(lookupFocus).filter(Boolean);
   let wild = (focus.mixed || []).map(lookupFocus).filter(Boolean);
@@ -263,31 +371,20 @@ function viewYoso(seg) {
     return `<div class="metric">朝の時点で選んだ混戦20レースです。展示タイムが入ると「展示反映済み」に変わり、本命が変わることもあります。</div>
       ${wild.map((r) => raceCard(r, "upset", "#9b7dff")).join("") || "<div class='empty'>まだありません</div>"}`;
   }
-  if (seg === "all") {
-    const vs = TODAY.venues || [];
-    if (!vs.length) return `<div class="empty">開催データがありません</div>`;
-    return vs.map((v) => {
-      const races = (TODAY.races || []).filter((r) => String(r.jcd) === String(v.jcd));
-      const live = races.some((r) => deadlineInfo(r).state !== "done" && deadlineInfo(r).state !== "unknown");
-      const badge = live ? `<span class="badge b-live">発売中</span>` : `<span class="badge b-end">終了</span>`;
-      const cards = races.map((r) => raceCard(r)).join("");
-      return `<div class="venue-h"><div class="title">${esc(v.name)}</div>${badge}</div>
-        <div class="sub" style="margin:-4px 2px 8px">${esc(v.session || "")} · ${esc(v.title || "")}</div>
-        ${cards}`;
-    }).join("");
-  }
   return `<div class="metric">朝の時点で選んだ固い20レースです。展示タイムが入ると「展示反映済み」に変わります。</div>
     ${hard.map((r) => raceCard(r, "stability", "#f0c14b")).join("") || "<div class='empty'>まだありません</div>"}`;
 }
 
-function barRow(n, name, p, maxP) {
+
+function barRow(n, name, p, maxP, p2) {
   const c = COLORS[n] || ["#888", "#fff"];
   const w = Math.max(4, (p / (maxP || 1)) * 100);
   const edge = n === 1 ? "box-shadow:inset 0 0 0 1px #666;" : "";
+  const p2s = (p2 == null || p2 === "") ? "" : `<div class="p2">2着 ${pct(p2)}</div>`;
   return `<div class="bar-row">
     <div class="meta">${wakuChip(n)} ${esc(name || "")}</div>
     <div class="track"><span style="width:${w}%;background:${c[0]};${edge}"></span></div>
-    <div class="pct">${pct(p)}</div>
+    <div class="pcts"><div class="pct">1着 ${pct(p)}</div>${p2s}</div>
   </div>`;
 }
 function comboBar(label, p, maxP, color) {
@@ -330,7 +427,7 @@ function predLine(p, label) {
   const tri = (p.trifecta_top5 || []).map((x) => x.label).join(" / ") || "-";
   return `<div class="card" style="padding:10px 12px">
     <div class="kicker">${label}</div>
-    <div class="sub">本命 ${wakuChip(p.honmei)} ${esc(hm)}　対抗 ${wakuChip(p.taiko)}　穴 ${wakuChip(p.ana)}</div>
+    <div class="sub">本命 ${wakuChip(p.honmei)} ${esc(hm)}　対抗 ${wakuChip(p.taiko)}　穴 ${wakuChip(p.ana)}</div>${p2Line(p)}
     <div class="sub">2連単 ${esc(ex)}</div>
     <div class="sub">3連単 ${esc(tri)}</div>
   </div>`;
@@ -351,7 +448,7 @@ function viewRace(jcd, rno) {
   if (!r) return `<button class="back" data-go="#/">← 戻る</button><div class="empty">レースが見つかりません</div>`;
   const boats = r.boats || [];
   const maxP = Math.max(...boats.map((b) => b.win_prob || 0), 0.01);
-  const bars = boats.filter((b) => !b.absent).map((b) => barRow(b.waku, b.name, b.win_prob || 0, maxP)).join("");
+  const bars = boats.filter((b) => !b.absent).map((b) => barRow(b.waku, b.name, b.win_prob || 0, maxP, boatP2(b, r))).join("");
   const tris = r.trifecta_top5 || [];
   const exs = r.exacta_top3 || [];
   const tmax = Math.max(...tris.map((x) => x.p || 0), 0.01);
@@ -364,7 +461,7 @@ function viewRace(jcd, rno) {
     return `<tr>
       <td>${wakuChip(b.waku)}</td>
       <td><strong>${esc(b.name)}</strong><div class="tech">${esc(b.grade || "")} · ${esc(b.toban || "")}${b.absent ? " · 欠場" : ""}</div>${techLine(b.tech)}</td>
-      <td class="pct" style="width:auto">${((b.win_prob || 0) * 100).toFixed(1)}%</td>
+      <td class="pct" style="width:auto">1着 ${((b.win_prob || 0) * 100).toFixed(1)}%<div class="tech">2着 ${boatP2(b, r) == null ? "-" : ((boatP2(b, r) * 100).toFixed(1) + "%")}</div></td>
       <td class="tech">全${b.nat_win ?? "-"} / 当地${b.loc_win ?? "-"}<br>M${b.motor_top2 ?? "-"}% B${b.boat_top2 ?? "-"}%<br>ST ${b.avg_st ?? "-"}　展 ${exh}${b.exh_course!=null?(`　進入${b.exh_course}C${b.exh_course!==b.waku?"（変化）":""}`):""}<br>コース1着 ${w1} 2連 ${t2}</td>
     </tr>`;
   }).join("");
@@ -388,10 +485,10 @@ function viewRace(jcd, rno) {
       <div class="pick">${wakuChip(r.honmei)}<div class="lbl">本命</div></div>
       <div class="pick">${wakuChip(r.taiko)}<div class="lbl">対抗</div></div>
       <div class="pick">${wakuChip(r.ana)}<div class="lbl">穴</div></div>
-    </div>`}
+    </div>${p2Line(r)}`}
     ${notes}
     ${cmpBlock(r)}
-    ${entryInfo(r).changed ? "" : `<h2 class="sec">1着確率</h2>${bars}`}
+    ${entryInfo(r).changed ? "" : `<h2 class="sec">1着 / 2着確率</h2>${bars}`}
     <h2 class="sec">出走表</h2>
     <div class="card" style="padding:6px 8px;overflow-x:auto">
       <table class="ent">
@@ -412,7 +509,7 @@ function statCard(s, extra = "") {
     <div class="k">${esc(s.label || "")}</div>
     <div class="n">n=${s.n ?? 0}</div>
     <div class="v">${pct(s.honmei)}</div>
-    <div class="s">本命的中<br>2連単TOP3 ${pct(s.exacta)}<br>3連単TOP5 ${pct(s.trifecta)}<br>回収率 ${retPct(s.roi)}</div>
+    <div class="s">本命的中<br>2着本命 ${pct(s.place2)}<br>2連単TOP3 ${pct(s.exacta)}<br>3連単TOP5 ${pct(s.trifecta)}<br>回収率 ${retPct(s.roi)}</div>
   </div>`;
 }
 
@@ -430,33 +527,30 @@ function focusCard(r) {
   }
   const chg = Number(r.pick_changed) === 1 ? `<div class="chg">展示反映で本命が変わりました</div>` : "";
   const entryChanged = Number(r.entry_changed) === 1;
-  const col = (title, honmei, name, conf, exacta, trifecta, h, e, t, empty, extra) => {
+  const col = (title, honmei, name, conf, exacta, trifecta, h, e, t, empty, extra, h2, h2name, h2hit) => {
     if ((honmei == null || honmei === "") && !exacta) {
       return `<div class="fcol"><div class="k">${title}</div><div class="sub">${empty || "なし"}</div></div>`;
     }
+    const p2 = (h2 == null || h2 === "") ? "" : `<div>2着本命 <strong>${esc(h2)}</strong> ${esc(h2name || "")} <span class="mark">${mark(h2hit)}</span></div>`;
     return `<div class="fcol"><div class="k">${title}</div>
       ${extra || ""}
       <div>本命 <strong>${esc(honmei)}</strong> ${esc(name || "")} <span class="mark">${mark(h)}</span></div>
+      ${p2}
       <div class="dim">${esc(conf || "")}</div>
       <div>2連 ${esc(exacta || "-")} <span class="mark">${mark(e)}</span></div>
       <div>3連 ${esc(trifecta || "-")} <span class="mark">${mark(t)}</span></div>
     </div>`;
   };
-  let badges = `<span class="badge ${kind === "solid" ? "b-hard" : "b-mix"}">${kindLabel}</span>
-        <span class="badge ${srcCls}">${src}</span>`;
-  if (entryChanged) badges += `<span class="badge b-shift">進入変化</span>`;
-  else if (hasExh && r.exh_entry_order) badges += `<span class="badge b-waku">枠なり</span>`;
-  let grid;
-  const morning = col("朝予想", r.morning_honmei, r.morning_honmei_name, r.morning_confidence, r.morning_exacta, r.morning_trifecta, r.morning_honmei_hit, r.morning_exacta_hit, r.morning_trifecta_hit);
+  const morning = col("朝予想", r.morning_honmei, r.morning_honmei_name, r.morning_confidence, r.morning_exacta, r.morning_trifecta, r.morning_honmei_hit, r.morning_exacta_hit, r.morning_trifecta_hit, undefined, "", r.morning_honmei2, r.morning_honmei2_name, r.morning_honmei2_hit);
   if (entryChanged) {
-    const waku = col("枠なり想定", r.waku_nari_honmei, r.waku_nari_honmei_name, r.waku_nari_confidence, r.waku_nari_exacta, r.waku_nari_trifecta, r.waku_nari_honmei_hit, r.waku_nari_exacta_hit, r.waku_nari_trifecta_hit);
+    const waku = col("枠なり想定", r.waku_nari_honmei, r.waku_nari_honmei_name, r.waku_nari_confidence, r.waku_nari_exacta, r.waku_nari_trifecta, r.waku_nari_honmei_hit, r.waku_nari_exacta_hit, r.waku_nari_trifecta_hit, undefined, "", r.waku_nari_honmei2, r.waku_nari_honmei2_name, r.waku_nari_honmei2_hit);
     const extra = r.exh_entry_order ? `<div class="dim">進入 ${esc(r.exh_entry_order)}</div>` : "";
-    const exhE = col("展示進入想定", r.exh_entry_honmei, r.exh_entry_honmei_name, r.exh_entry_confidence, r.exh_entry_exacta, r.exh_entry_trifecta, r.exh_entry_honmei_hit, r.exh_entry_exacta_hit, r.exh_entry_trifecta_hit, "なし", extra);
+    const exhE = col("展示進入想定", r.exh_entry_honmei, r.exh_entry_honmei_name, r.exh_entry_confidence, r.exh_entry_exacta, r.exh_entry_trifecta, r.exh_entry_honmei_hit, r.exh_entry_exacta_hit, r.exh_entry_trifecta_hit, "なし", extra, r.exh_entry_honmei2, r.exh_entry_honmei2_name, r.exh_entry_honmei2_hit);
     grid = `<div class="fgrid fgrid-am">${morning}</div><div class="fgrid">${waku}${exhE}</div>`;
   } else {
     grid = `<div class="fgrid">
       ${morning}
-      ${col("展示反映", r.exh_honmei, r.exh_honmei_name, r.exh_confidence, r.exh_exacta, r.exh_trifecta, r.exh_honmei_hit, r.exh_exacta_hit, r.exh_trifecta_hit, "展示なし（朝予想のまま）")}
+      ${col("展示反映", r.exh_honmei, r.exh_honmei_name, r.exh_confidence, r.exh_exacta, r.exh_trifecta, r.exh_honmei_hit, r.exh_exacta_hit, r.exh_trifecta_hit, "展示なし（朝予想のまま）", "", r.exh_honmei2, r.exh_honmei2_name, r.exh_honmei2_hit)}
     </div>`;
   }
   const entryLines = [];
@@ -642,14 +736,16 @@ function parseRoute() {
   const race = h.match(/^#\/v\/(\d+)\/r\/(\d+)/);
   if (race) return { tab: "yoso", view: "race", jcd: race[1], rno: race[2], seg: null };
   const ven = h.match(/^#\/v\/(\d+)/);
-  if (ven) return { tab: "yoso", view: "all", jcd: ven[1], seg: "all" };
+  if (ven) return { tab: "yoso", view: "venue", jcd: ven[1], seg: null };
   if (h.startsWith("#/report")) return { tab: "report", view: "report", seg: null };
   const hist = h.match(/^#\/history\/(\d{8})/);
   if (hist) return { tab: "history", view: "history-day", day: hist[1], seg: null };
   if (h.startsWith("#/history")) return { tab: "history", view: "history", seg: null };
   if (h.startsWith("#/mixed") || h.startsWith("#/yoso/mixed")) return { tab: "yoso", view: "list", seg: "mixed" };
-  if (h.startsWith("#/all") || h.startsWith("#/yoso/all")) return { tab: "yoso", view: "list", seg: "all" };
-  return { tab: "yoso", view: "list", seg: "solid" };
+  if (h.startsWith("#/solid") || h.startsWith("#/yoso/solid")) return { tab: "yoso", view: "list", seg: "solid" };
+  if (h.startsWith("#/close") || h.startsWith("#/deadline")) return { tab: "yoso", view: "list", seg: "close" };
+  if (h.startsWith("#/all") || h.startsWith("#/yoso/all") || h.startsWith("#/meet")) return { tab: "yoso", view: "list", seg: "meet" };
+  return { tab: "yoso", view: "list", seg: "meet" };
 }
 
 function route() {
@@ -658,10 +754,10 @@ function route() {
   const segs = $("#segments");
   const title = $("#pageTitle");
   const dateEl = $("#dateLabel");
-  if (r.tab === "yoso" && r.view !== "race") {
+  if (r.tab === "yoso" && r.view !== "race" && r.view !== "venue") {
     segs.hidden = false;
     segs.style.display = "";
-    $$("#segments button").forEach((b) => b.classList.toggle("on", b.dataset.seg === (r.seg || "solid")));
+    $$("#segments button").forEach((b) => b.classList.toggle("on", b.dataset.seg === (r.seg || "meet")));
     title.textContent = "競艇予想";
     dateEl.textContent = TODAY ? (TODAY.date_label || dateLabel(TODAY.date)) : "";
   } else {
@@ -681,10 +777,11 @@ function route() {
   renderStatus(r.view === "race" ? "" : r.tab);
   let html = "";
   if (r.view === "race") html = viewRace(r.jcd, r.rno);
+  else if (r.view === "venue") html = viewVenue(r.jcd);
   else if (r.tab === "report") html = viewReport();
   else if (r.view === "history-day") html = viewHistory(r.day);
   else if (r.tab === "history") html = viewHistory();
-  else html = viewYoso(r.seg || "solid");
+  else html = viewYoso(r.seg || "meet");
   main.innerHTML = html;
   window.scrollTo(0, 0);
 }
@@ -720,6 +817,10 @@ function setupInstall() {
   const close = $("#installClose");
   if (!banner) return;
   if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone) {
+    banner.hidden = true;
+    return;
+  }
+  if (/(?:^|[?&])noinstall=1(?:&|$)/.test(location.search || "")) {
     banner.hidden = true;
     return;
   }
@@ -765,7 +866,7 @@ function bind() {
   $$("#segments button").forEach((b) => {
     b.addEventListener("click", () => {
       const seg = b.dataset.seg;
-      location.hash = seg === "solid" ? "#/" : (seg === "mixed" ? "#/mixed" : "#/all");
+      location.hash = seg === "meet" ? "#/" : (seg === "solid" ? "#/solid" : (seg === "mixed" ? "#/mixed" : "#/close"));
     });
   });
   main.addEventListener("click", (e) => {

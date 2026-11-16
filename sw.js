@@ -1,5 +1,5 @@
 /* network-first: always try the network so today's predictions stay fresh, fall back to cache when offline */
-const CACHE = "kyotei-v1";
+const CACHE = "kyotei-v2";
 const PRECACHE = [
   "./",
   "./index.html",
