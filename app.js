@@ -36,9 +36,28 @@ function badgeConf(c) {
   if (c === "混戦") return `<span class="badge b-mix">混戦</span>`;
   return c ? `<span class="badge b-end">${esc(c)}</span>` : "";
 }
+function boatByWaku(r, waku) {
+  if (!r || waku == null) return null;
+  const hit = (r.ranking || []).find((x) => x.waku === waku);
+  if (hit) return hit;
+  return (r.boats || []).find((x) => x.waku === waku) || null;
+}
+function honmeiNameOf(r) {
+  const b = boatByWaku(r, r && r.honmei);
+  return (r && r.honmei_name) || (b && b.name) || "";
+}
+function honmeiProbOf(r) {
+  const b = boatByWaku(r, r && r.honmei);
+  if (!b) return null;
+  return b.p != null ? b.p : b.win_prob;
+}
+function switchHeld(r) {
+  return r && r.has_exhibition && r.exh_switch_applied === false && r.morning_pred && r.exh_pred && r.morning_pred.honmei !== r.exh_pred.honmei;
+}
 function badgeSource(r) {
   if (r && (r.has_exhibition || r.pred_source === "exhibition")) {
-    return `<span class="badge b-exh">展示反映済み</span>`;
+    const held = switchHeld(r) ? `<span class="badge b-am">本命は朝のまま</span>` : "";
+    return `<span class="badge b-exh">展示反映済み</span>${held}`;
   }
   return `<span class="badge b-am">朝予想</span>`;
 }
@@ -231,14 +250,12 @@ function refreshCountdowns() {
 }
 
 function honmeiProb(r) {
-  const boats = r.boats || [];
-  const b = boats.find((x) => x.waku === r.honmei);
-  return b ? b.win_prob : (r.ranking && r.ranking[0] && r.ranking[0].win_prob);
+  return honmeiProbOf(r);
 }
 
 function raceCard(r, key, color) {
   const kind = r.confidence === "混戦" || key === "upset" ? "mixed" : "solid";
-  const hm = (r.ranking && r.ranking[0]) ? r.ranking[0].name : (r.honmei_name || "");
+  const hm = honmeiNameOf(r);
   const p = honmeiProb(r);
   const val = key ? (r[key] || 0) : null;
   return `<article class="card tap ${kind}" data-go="#/v/${r.jcd}/r/${r.rno}">
@@ -422,7 +439,7 @@ function techLine(t) {
 }
 function predLine(p, label) {
   if (!p) return "";
-  const hm = p.honmei_name || ((p.ranking && p.ranking[0]) ? p.ranking[0].name : "");
+  const hm = honmeiNameOf(p);
   const ex = (p.exacta_top3 || []).map((x) => x.label).join(" / ") || "-";
   const tri = (p.trifecta_top5 || []).map((x) => x.label).join(" / ") || "-";
   return `<div class="card" style="padding:10px 12px">
@@ -436,9 +453,19 @@ function cmpBlock(r) {
   const m = r.morning_pred;
   const e = r.exh_pred || (r.has_exhibition ? r : null);
   if (!m || !e || !(r.has_exhibition || r.pred_source === "exhibition")) return "";
-  const changed = m.honmei !== e.honmei
-    ? `<div class="note">※ 展示反映で本命が ${m.honmei}号艇 → ${e.honmei}号艇 に変わりました</div>`
-    : `<div class="sub">本命は朝予想から変更なし</div>`;
+  let changed;
+  if (m.honmei !== e.honmei) {
+    const gap = r.exh_switch_gap_pp != null ? `（差 ${r.exh_switch_gap_pp}pt / 閾値 ${r.exh_switch_threshold_pp}pt）` : "";
+    if (r.exh_switch_applied) {
+      changed = `<div class="note">※ 展示後の勝率差が閾値以上のため、公式の本命を ${m.honmei}号艇 → ${e.honmei}号艇 に入れ替えました${gap}</div>`;
+    } else if (r.exh_switch_applied === false) {
+      changed = `<div class="sub">※ 展示の1着確率では本命が ${e.honmei}号艇ですが、朝の本命 ${m.honmei}号艇との差が閾値に足りないため、公式の本命・買い目は朝予想のままです${gap}</div>`;
+    } else {
+      changed = `<div class="note">※ 展示反映で本命が ${m.honmei}号艇 → ${e.honmei}号艇 に変わりました</div>`;
+    }
+  } else {
+    changed = `<div class="sub">本命は朝予想から変更なし</div>`;
+  }
   return `<h2 class="sec">朝予想と展示反映</h2>${predLine(m, "朝予想")}${predLine(e, "展示反映")}${changed}`;
 }
 
